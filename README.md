@@ -1,191 +1,157 @@
-# Disaster Tweets: NLP Classification with PyTorch
+# Disaster Tweets: Reproducible NLP Classification
 
-> **Portfolio project:** classifying short social-media posts as disaster-related or not disaster-related.
+> **Portfolio project:** a notebook-based NLP workflow for classifying tweets as disaster-related or not, with honest baselines, reproducible training, and explicit error analysis.
 
-This project explores how natural-language processing can support the triage of noisy, ambiguous social-media text during emergencies. It includes exploratory data analysis, text normalization, vocabulary construction, sequence padding, and a bidirectional LSTM classifier implemented in PyTorch.
+This repository analyzes the **Natural Language Processing with Disaster Tweets** dataset and compares simple and neural text-classification approaches. The project is intentionally compact, but the workflow is now technically correct:
 
-## Executive summary
+- processed train/test text is assigned back **positionally** instead of through mismatched pandas indexes
+- learned artifacts are fit on the **training split only**, avoiding avoidable validation/test leakage
+- random seeds are set for Python, NumPy, and PyTorch
+- the notebook handles required NLTK resources and missing local dataset files clearly
+- validation reporting includes **accuracy, precision, recall, F1, and confusion matrices**
+- the notebook prints representative **false positives** and **false negatives** for interpretation
 
-| Area | Details |
-|---|---|
-| **Task** | Binary text classification: disaster tweet vs. non-disaster tweet |
-| **Training data** | 7,613 labeled tweets |
-| **Test data** | 3,263 unlabeled tweets |
-| **Target balance** | 42.97% disaster / 57.03% non-disaster tweets |
-| **Primary model** | Bidirectional LSTM with learned word embeddings |
-| **Frameworks** | Python, pandas, scikit-learn, NLTK, PyTorch |
-| **Evaluation focus** | Precision, recall, F1 score, accuracy, and error analysis |
+## Repository contents
 
-## Why this problem matters
+```text
+Disaster-Tweets/
+├── NaturalLanguageProcessing (1).ipynb
+├── README.md
+└── requirements.txt
+```
 
-Emergency-response teams may need to identify useful signals from large volumes of informal, short, and context-poor messages. A practical classifier must do more than achieve a high accuracy score: it should make the tradeoff between missed disaster tweets and false alarms explicit, remain reproducible, and be evaluated on examples where language is ambiguous.
+## What the notebook demonstrates
 
-## What this project demonstrates
+- exploratory analysis of short, noisy social-media text
+- deterministic text cleaning and lemmatization with NLTK
+- stratified train/validation splitting
+- a **majority-class baseline**
+- a **TF-IDF + Logistic Regression** baseline
+- a **PyTorch BiLSTM** with early stopping and gradient clipping
+- metric-based model comparison on the validation split
+- qualitative error analysis for ambiguous language
 
-- Translating an open-ended NLP problem into a measurable classification task
-- Inspecting data quality, class balance, and missing values before modeling
-- Cleaning informal text while preserving potentially meaningful hashtag terms
-- Building a vocabulary and converting variable-length text into padded sequences
-- Implementing a trainable neural network in PyTorch rather than relying only on a high-level estimator
-- Using stratified validation splitting and binary cross-entropy with logits
-- Diagnosing preprocessing and inference failures instead of silently reporting invalid predictions
+## Data
 
-## Dataset
-
-The project uses the **Natural Language Processing with Disaster Tweets** dataset. Each record contains:
-
-- `text`: the tweet content
-- `keyword`: an extracted disaster-related keyword, when available
-- `location`: the reported location, when available
-- `target`: `1` for a real disaster tweet and `0` otherwise
-
-The training data contains missing values in `keyword` and `location`, while `text` and `target` are complete. The notebook currently focuses primarily on the cleaned tweet text.
-
-The dataset files are intentionally not committed to this repository. To run the notebook, place the competition files in the repository root:
+The repository does **not** include the Kaggle competition files. To run the full workflow locally, place these files in the repository root:
 
 ```text
 train.csv
- test.csv
+test.csv
 ```
 
-## Exploratory analysis
+Those files are external competition data and should not be committed.
 
-The notebook investigates:
+## Corrected workflow
 
-- Target-class distribution
-- Tweet-length distributions by class
-- Frequent keywords and locations
-- Frequent words after preprocessing
-- Missing values and basic dataset structure
+### 1. Preprocessing
 
-The analysis shows that disaster tweets are somewhat longer on average than non-disaster tweets in this sample, while the target distribution is moderately imbalanced rather than severely skewed.
+The notebook lowercases text, removes URLs/HTML/mentions/punctuation/numeric tokens, keeps hashtag words by removing only the `#` symbol, removes English stop words, and lemmatizes remaining tokens.
 
-## Text preprocessing
-
-The current preprocessing workflow:
-
-1. Converts text to lowercase
-2. Removes URLs, HTML tags, punctuation, newline characters, and mentions
-3. Removes words containing numbers
-4. Removes the `#` symbol while retaining the hashtag word
-5. Removes English stop words
-6. Applies WordNet lemmatization
-7. Builds a vocabulary with padding and unknown tokens
-8. Truncates or pads sequences to the 95th-percentile sequence length
-
-This creates a compact input representation for the neural network while retaining the semantic content of hashtags such as `#wildfires`.
-
-## Model architecture
-
-The notebook implements a PyTorch `BiLSTMClassifier` with:
-
-- 100-dimensional learned word embeddings
-- 128 hidden units in a bidirectional LSTM
-- Global max pooling over sequence outputs
-- A 64-unit fully connected layer
-- Dropout regularization with probability 0.3
-- A single binary output logit
-- `BCEWithLogitsLoss` and the Adam optimizer
-- Gradient clipping to reduce the risk of exploding gradients
-
-The configured model contains approximately **1.8 million trainable parameters**.
-
-## Results and validation status
-
-Final benchmark metrics are intentionally **not reported yet** because the current notebook contains a preprocessing/inference issue that must be fixed before its predictions can be trusted.
-
-During the notebook run, a diagnostic check reported that every test sequence was identical and contained only padding-token IDs. This means the model was not receiving the actual test text at inference time. Reporting a test score or submission result before correcting this would be misleading.
-
-### Known issue to fix
-
-The train/test processed-text assignment is performed using pandas index alignment after slicing `combined_df`. Because the test slice retains indexes beginning at the training-set length, assigning it to `test_df` can produce missing values that are later converted into empty strings. The result is an all-padding test input.
-
-The assignment should be made positionally, for example:
+To preserve the original educational approach while fixing the bug, train and test text are still preprocessed together for deterministic cleaning, but the processed text is assigned back like this:
 
 ```python
 train_df["processed_text"] = combined_df.iloc[: len(train_df)]["processed_text"].to_numpy()
 test_df["processed_text"] = combined_df.iloc[len(train_df) :]["processed_text"].to_numpy()
 ```
 
-After fixing this issue, the project should report:
+Using `.to_numpy()` forces **positional assignment**, which prevents the earlier all-padding test-sequence failure caused by pandas index alignment.
 
-- A majority-class baseline
-- A simple TF-IDF + logistic regression baseline
-- BiLSTM validation accuracy, precision, recall, and F1
-- A confusion matrix
-- Representative false positives and false negatives
-- Results across at least one additional random seed or validation split
+### 2. Leakage prevention
 
-## How to run
+The notebook now learns all fitted text artifacts from the **training split only**:
 
-### 1. Clone the repository
+- the TF-IDF vectorizer is fit on the training split and used to transform validation/test text
+- the BiLSTM vocabulary is built from the training split and used to encode validation/test text
+- the maximum sequence length is derived from the training split
+
+This keeps validation metrics honest and avoids using unlabeled test text to define the feature space.
+
+### 3. Reproducibility
+
+The notebook sets seeds for:
+
+- Python `random`
+- NumPy
+- PyTorch
+- train/validation splitting
+- shuffled PyTorch dataloaders
+
+It also attempts deterministic PyTorch behavior where practical and downloads required NLTK corpora if they are missing locally. If corpus downloads are blocked in a restricted environment, the notebook falls back gracefully by using scikit-learn English stop words and skipping lemmatization rather than crashing.
+
+## Results and model comparison
+
+The notebook is configured to compare:
+
+1. **Majority class baseline**
+2. **TF-IDF + Logistic Regression**
+3. **BiLSTM**
+
+For each model, the notebook reports:
+
+- accuracy
+- precision
+- recall
+- F1 score
+- confusion matrix
+
+### Important note about results
+
+No numeric results are claimed in this README because the dataset files were **not present in the repository clone used for this update**. The notebook will calculate and print the real validation metrics locally once `train.csv` and `test.csv` are added.
+
+That keeps the repository honest: the workflow is corrected and ready to run, but no unverified scores are advertised.
+
+## Error analysis
+
+The notebook now prints representative false positives and false negatives from the best validation model among the main learned baselines.
+
+This matters because disaster language is ambiguous:
+
+- **false positives** often involve figurative language such as “this exam was a disaster” or “my phone is on fire”
+- **false negatives** often require context that is not obvious from keywords alone
+
+For a hiring manager, this is a more useful signal than a single metric because it shows model judgment, limitations, and interpretation.
+
+## Environment assumptions
+
+This update was prepared in a **Python 3.12** environment. Install the dependencies in `requirements.txt` and run the notebook from the repository root so relative dataset paths resolve correctly.
+
+## Setup
 
 ```bash
 git clone https://github.com/lhimmelspach/Disaster-Tweets.git
 cd Disaster-Tweets
-```
-
-### 2. Create an environment
-
-```bash
 python -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-# .venv\Scripts\activate         # Windows
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### 3. Install dependencies
-
-```bash
-pip install pandas numpy matplotlib seaborn scikit-learn nltk torch jupyter
-```
-
-The notebook also requires the NLTK English stop-word and WordNet resources. In a Python session, run:
-
-```python
-import nltk
-nltk.download("stopwords")
-nltk.download("wordnet")
-nltk.download("omw-1.4")
-```
-
-### 4. Add the dataset files
-
-Place `train.csv` and `test.csv` in the repository root. These files are not included because they are external competition data.
-
-### 5. Run the notebook
+Then place `train.csv` and `test.csv` in the repository root and launch Jupyter:
 
 ```bash
 jupyter lab
 ```
 
-Open `NaturalLanguageProcessing (1).ipynb` and run the cells from top to bottom. The notebook should be updated to fix the test-sequence issue before treating its final predictions as valid.
-
-## Recommended next improvements
-
-1. Fix the positional train/test assignment described above.
-2. Build the vocabulary from the training split only to avoid validation/test information leakage.
-3. Add a reproducible TF-IDF baseline before comparing against the BiLSTM.
-4. Save validation metrics and plots under `reports/` rather than only displaying them in the notebook.
-5. Add early stopping, checkpointing, and a random seed for reproducible training.
-6. Evaluate precision and recall separately because false negatives may be especially costly in an emergency-triage setting.
-7. Add error analysis for sarcasm, figurative uses of words such as “fire,” duplicated tweets, and ambiguous news references.
-8. Refactor reusable preprocessing and modeling code into `src/`, with a `requirements.txt` file and a small test suite.
-
-## Repository contents
-
-```text
-Disaster-Tweets/
-├── NaturalLanguageProcessing (1).ipynb  # EDA, preprocessing, modeling, diagnostics
-└── README.md                             # Project documentation
-```
+Open `NaturalLanguageProcessing (1).ipynb` and run the cells from top to bottom.
 
 ## Limitations
 
-- The dataset is relatively small for training a neural language model from scratch.
-- Tweets are short, noisy, and often ambiguous without external context.
-- The labels may reflect annotator judgment rather than an objective definition of a disaster.
-- Validation performance may not generalize to future events, regions, or writing styles.
-- The current repository is notebook-only and does not yet provide a fully automated training or inference pipeline.
+- the project is still notebook-first rather than a packaged training pipeline
+- the dataset is small for a neural model trained from scratch
+- tweets are short, noisy, and often ambiguous without external context
+- validation performance can vary across random seeds and splits
+- the notebook does not commit benchmark outputs because the external dataset is intentionally absent
+
+## Why this is portfolio-worthy
+
+This repository now presents the project the way a hiring manager would want to see it:
+
+- a clear problem statement
+- a technically correct preprocessing pipeline
+- an honest baseline before a neural model
+- reproducibility steps
+- interpretable validation reporting
+- explicit discussion of ambiguity and model errors
 
 ## Author
 
